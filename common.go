@@ -58,3 +58,45 @@ var DataSignerCrc32 = func(data string) string {
 	time.Sleep(time.Second)
 	return dataHash
 }
+
+var SingleHash = func (in, out chan interface{}) {
+	for {
+		data := <-in
+		var item string
+		var ok bool
+		if item, ok = data.(string); !ok {
+			item = fmt.Sprint(data)
+		}
+		out <- DataSignerCrc32(item)+"~"+DataSignerCrc32(DataSignerMd5(item))
+	}	
+}
+
+var MultiHash = func (in, out chan interface{}) {
+	for {
+		data := fmt.Sprint(<-in)
+		th := []int{0,1,2,3,4,5}
+		result := ""
+		for _, v := range th {
+			result += DataSignerCrc32(fmt.Sprint(v) + data)
+		}
+
+		out <- result
+	}
+}
+
+var CombineResults = func (in, out chan interface{}) {
+	result := ""
+	data :=  make([]string, 0)
+	for {
+		if item, ok := <- in; ok {
+			data = append(data, fmt.Sprint(item))
+		} else {
+			for _, v := range data {
+				result = result + "_" + v
+			}
+			
+			out <- result
+			break
+		}
+	}
+}

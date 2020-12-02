@@ -2,50 +2,99 @@ package main
 
 import (
 	"fmt"
-	"sync/atomic"
-	"time"
 )
 
 func main() {
-	var ok = true
-	var recieved uint32
-	freeFlowJobs := []job{
+	testResult := "NOT_SET"
+	//inputData := []int{0, 1, 1, 2, 3, 5, 8}
+	inputData := []int{0,1}
+
+	hashSignJobs := []job{
 		job(func(in, out chan interface{}) {
-			out <- 1
-			time.Sleep(10 * time.Millisecond)
-			currRecieved := atomic.LoadUint32(&recieved)
-			// в чем тут суть
-			// если вы накапливаете значения, то пока вся функция не отрабоатет - дальше они не пойдут
-			// тут я проверяю, что счетчик увеличился в следующей функции
-			// это значит что туда дошло значение прежде чем текущая функция отработала
-			if currRecieved == 0 {
-				ok = false
+			for _, fibNum := range inputData {
+				out <- fibNum
 			}
 		}),
+		job(SingleHash),
+		job(MultiHash),
+		job(CombineResults),
 		job(func(in, out chan interface{}) {
-			for _ = range in {
-				atomic.AddUint32(&recieved, 1)
+			dataRaw := <-in
+			data, ok := dataRaw.(string)
+			if !ok {
+				fmt.Println("cant convert result data to string")
 			}
+			testResult = data
 		}),
 	}
-	ExecutePipeline(freeFlowJobs...)
-	if !ok || recieved == 0 {
-		fmt.Print("no value free flow - dont collect them")
-	}
+
+	//start := time.Now()
+
+	ExecutePipeline(hashSignJobs...)
+
+	//end := time.Since(start)
+	fmt.Println(testResult)
+/*
+	//------------------------------
+	in, out := make(chan interface{}), make(chan interface{})
+	go func() {
+		SingleHash(in, out)
+		close(out)
+	}()
+	in <- 0
+	singleHash1 := <- out
+	in <- 1
+	singleHash2 := <- out
+	fmt.Println(singleHash1)
+	fmt.Println(singleHash2)
+
+	//------------------------------
+	in, out = make(chan interface{}), make(chan interface{})
+	go func() {
+		MultiHash(in, out)
+		close(out)
+	}()
+	in <- singleHash2
+	multiHash1 := <- out
+	in <- singleHash1
+	multiHash2 := <- out
+	fmt.Println(multiHash1)
+	fmt.Println(multiHash2)
+
+	//------------------------------
+	in, out = make(chan interface{}), make(chan interface{})
+	go func() {
+		CombineResults(in, out)
+		close(out)
+	}()
+	in <- multiHash1
+	in <- multiHash2
+	fmt.Println(<-out)
+*/
 }
 
 // сюда писать код
 func ExecutePipeline(jobs ...job) {
-	var in, out chan interface{}
-	for i, v := range jobs {
+	// Объявляем переменные для входног/выходного каналов
+	var in chan interface{}
+	var out chan interface{}
+	
+	
+	// Бежим по массиву задач и запускаем горутины
+	for i, _ := range jobs {
 		if i == 0 {
 			in = make(chan interface{})
 		} else {
-			in = out
+			in <- out
 		}
 
-		out = make(chan interface{})
+		if i < len(jobs) {
+			out = make(chan interface{})
+		} else {
+			out = make(chan interface{})
+		}
 
-		go v(in, out)
+		go jobs[i](in, out)
 	}
 }
+
