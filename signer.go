@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"time"
 	"sync/atomic"
+	"time"
 )
 
 func main() {
@@ -35,6 +35,17 @@ func main() {
 }
 
 // сюда писать код
-func ExecutePipeline(in ...job) {
-	
+func ExecutePipeline(jobs ...job) {
+	var in, out chan interface{}
+	for i, v := range jobs {
+		if i == 0 {
+			in = make(chan interface{})
+		} else {
+			in = out
+		}
+
+		out = make(chan interface{})
+
+		go v(in, out)
+	}
 }
