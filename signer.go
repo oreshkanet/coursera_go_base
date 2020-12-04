@@ -41,6 +41,55 @@ func main() {
 }
 
 // сюда писать код
+func ExecutePipeline1(jobs ...job) {
+	// Объявляем переменные для входног/выходного каналов
+	var in chan interface{}
+	var out chan interface{}
+
+	chans := make([]chan interface{}, 0)
+	chans = append(chans, make(chan interface{}))
+
+	// Бежим по массиву задач и запускаем горутины
+	for i := range jobs {
+		chans = append(chans, make(chan interface{}))
+
+		in = chans[i]
+		out = chans[i+1]
+
+		if i == 0 {
+			go func(job job, in chan interface{}, out chan interface{}) {
+				job(in, out)
+				close(out)
+			}(jobs[i], in, out)
+		} else {
+			go func(job job, in chan interface{}, out chan interface{}) {
+				for {
+					if data, ok := <-in; ok {
+						inJob := make(chan interface{})
+						outJob := make(chan interface{})
+						go job(inJob, outJob)
+						inJob <- data
+						out <- <-outJob
+						runtime.Gosched()
+						//close(outJob)
+					} else {
+						break
+					}
+				}
+				close(out)
+			}(jobs[i], in, out)
+		}
+	}
+	//chans[0] <- ""
+	for {
+		if _, ok := <-out; !ok {
+			break
+		}
+	}
+	// Нужно получить значение из последнего потока
+	// Иначе выполнение основной горутины кончится раньше, чем все остальные
+}
+
 func ExecutePipeline(jobs ...job) {
 	// Объявляем переменные для входног/выходного каналов
 	var in chan interface{}

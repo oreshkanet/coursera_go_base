@@ -64,6 +64,7 @@ var DataSignerCrc32 = func(data string) string {
 var SingleHash = func(in, out chan interface{}) {
 	for {
 		if data, ok := <-in; ok {
+			start := time.Now()
 			println("SingleHash " + fmt.Sprint(data))
 			var item string
 			var ok bool
@@ -71,12 +72,12 @@ var SingleHash = func(in, out chan interface{}) {
 				item = fmt.Sprint(data)
 			}
 			//out <- DataSignerCrc32(item) + "~" + DataSignerCrc32(DataSignerMd5(item))
-			chSrc32In := make(chan string)
-			chSrc32Out := make(chan string)
-			chSrc32In1 := make(chan string)
-			chSrc32Out1 := make(chan string)
-			chSrc32In2 := make(chan string)
-			chSrc32Out2 := make(chan string)
+			chSrc32In := make(chan string, 1)
+			chSrc32Out := make(chan string, 1)
+			chSrc32In1 := make(chan string, 1)
+			chSrc32Out1 := make(chan string, 1)
+			chSrc32In2 := make(chan string, 1)
+			chSrc32Out2 := make(chan string, 1)
 			go func(in chan string, out chan string) {
 				out <- DataSignerCrc32(<-in)
 				close(out)
@@ -92,6 +93,9 @@ var SingleHash = func(in, out chan interface{}) {
 			chSrc32In <- item
 			chSrc32In1 <- item
 			chSrc32In2 <- <- chSrc32Out1
+
+			end := time.Since(start)
+			println("SingleHash " + fmt.Sprint(data) + " " + fmt.Sprint(end))
 			out <- (<-chSrc32Out + "~" + <-chSrc32Out2)
 		} else {
 			break
@@ -103,6 +107,7 @@ var SingleHash = func(in, out chan interface{}) {
 var MultiHash = func(in, out chan interface{}) {
 	for {
 		if item, ok := <-in; ok {
+			start := time.Now()
 			data := fmt.Sprint(item)
 			wg := &sync.WaitGroup{}
 			//th := []int{0, 1, 2, 3, 4, 5}
@@ -123,7 +128,9 @@ var MultiHash = func(in, out chan interface{}) {
 			for _, ch := range resultSlice {
 				result += <-ch
 			}
-			println("MultiHash " + result)
+			end := time.Since(start)
+			println("MultiHash " + result + " " + fmt.Sprint(end))
+
 			out <- result
 		} else {
 			break
