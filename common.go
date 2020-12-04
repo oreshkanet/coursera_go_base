@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"hash/crc32"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
+	"runtime"
 )
 
 type job func(in, out chan interface{})
@@ -77,17 +79,20 @@ var SingleHash = func(in, out chan interface{}) {
 			chSrc32Out2 := make(chan string)
 			go func(in chan string, out chan string) {
 				out <- DataSignerCrc32(<-in)
+				close(out)
 			}(chSrc32In, chSrc32Out)
 			go func(in chan string, out chan string) {
 				out <- DataSignerMd5(<-in)
+				close(out)
 			}(chSrc32In1, chSrc32Out1)
 			go func(in chan string, out chan string) {
 				out <- DataSignerCrc32(<-in)
+				close(out)
 			}(chSrc32In2, chSrc32Out2)
 			chSrc32In <- item
 			chSrc32In1 <- item
-			chSrc32In2 <- chSrc32Out1
-			out <- (<-chSrc32Out + "~" + <-chSrc32In2)
+			chSrc32In2 <- <- chSrc32Out1
+			out <- (<-chSrc32Out + "~" + <-chSrc32Out2)
 		} else {
 			break
 		}
@@ -99,12 +104,26 @@ var MultiHash = func(in, out chan interface{}) {
 	for {
 		if item, ok := <-in; ok {
 			data := fmt.Sprint(item)
-			th := []int{0, 1, 2, 3, 4, 5}
+			wg := &sync.WaitGroup{}
+			//th := []int{0, 1, 2, 3, 4, 5}
+			resultSlice := make([]chan string, 5, 5)
 			result := ""
-			for _, v := range th {
-				result += DataSignerCrc32(fmt.Sprint(v) + data)
+			for i := range resultSlice {
+				resultSlice[i] = make(chan string, 1)
+				wg.Add(1)
+				go func (wg *sync.WaitGroup, ch chan string, data string) {
+					defer wg.Done()
+					ch <- DataSignerCrc32(data)
+					runtime.Gosched() // даём поработать другим горутинам
+					//close(ch)
+				}(wg, resultSlice[i], fmt.Sprint(i) + data)
+				//result += DataSignerCrc32(fmt.Sprint(i) + data)
 			}
-			println("MultiHash " + data)
+			wg.Wait()
+			for _, ch := range resultSlice {
+				result += <-ch
+			}
+			println("MultiHash " + result)
 			out <- result
 		} else {
 			break
