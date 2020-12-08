@@ -29,7 +29,7 @@ func main() {
 				fmt.Println("cant convert result data to string")
 			}
 			testResult = data
-			println("jobend " + testResult)
+			// println("jobend " + testResult)
 		}),
 	}
 
@@ -61,29 +61,8 @@ func ExecutePipeline(jobs ...job) {
 
 		go func(job job, inGo chan interface{}, outGo chan interface{}) {
 			job(inGo, outGo)
-			//runtime.Gosched()
 			close(outGo)
 		}(jobs[i], in, out)
-
-		/* else {
-			go func(jobs job, in chan interface{}, out chan interface{}) {
-				wg := &sync.WaitGroup{}
-				for data := range in {
-					inJob := make(chan interface{}, 0)
-					wg.Add(1)
-					go func(wg *sync.WaitGroup, jobs job, in chan interface{}, out chan interface{}) {
-						defer wg.Done()
-						jobs(in, out)
-						runtime.Gosched()
-						//close(out)
-					}(wg, jobs, inJob, out)
-					inJob <- data
-				}
-				wg.Wait()
-				close(out)
-			}(jobs[i], in, out)
-		}
-		*/
 	}
 	for {
 		if _, ok := <-out; !ok {
@@ -103,14 +82,12 @@ var SingleHash = func(in, out chan interface{}) {
 	}
 
 	goDataSignerCrc32 := func(dataIn string, outCrc chan string) {
-		//defer wg.Done()
 		outCrc <- DataSignerCrc32(dataIn)
 	}
 
-	startWG := time.Now()
+	//startWG := time.Now()
 	wg := &sync.WaitGroup{}
 	for _, data := range data {
-		//for data := range in {
 		dataMd5 := DataSignerMd5(fmt.Sprint(data))
 		inJob := make(chan interface{})
 		wg.Add(1)
@@ -119,12 +96,7 @@ var SingleHash = func(in, out chan interface{}) {
 
 			item := fmt.Sprint(<-inJob)
 			start := time.Now()
-			println("SingleHash " + item)
-			//outJob <- DataSignerCrc32(item) + "~" + DataSignerCrc32(DataSignerMd5(item))
-			//end := time.Since(start)
-			//println("SingleHash " + fmt.Sprint(item) + " " + fmt.Sprint(end))
-
-			//wgCrc := &sync.WaitGroup{}
+			//println("SingleHash " + item)
 			chSrc32Out := make(chan string, 0)
 			chSrc32Out1 := make(chan string, 0)
 			go goDataSignerCrc32(item, chSrc32Out)
@@ -133,14 +105,14 @@ var SingleHash = func(in, out chan interface{}) {
 			end := time.Since(start)
 			outJob <- (<-chSrc32Out + "~" + <-chSrc32Out1)
 
-			println("SingleHash " + fmt.Sprint(item) + " " + fmt.Sprint(end))
+			//println("SingleHash " + fmt.Sprint(item) + " " + fmt.Sprint(end))
 
 		}(wg, inJob, out)
 		inJob <- data
 	}
 	wg.Wait()
-	endWG := time.Since(startWG)
-	println("SingleHash " + fmt.Sprint(endWG))
+	//endWG := time.Since(startWG)
+	//println("SingleHash " + fmt.Sprint(endWG))
 }
 
 var MultiHash = func(in, out chan interface{}) {
@@ -159,7 +131,6 @@ var MultiHash = func(in, out chan interface{}) {
 			data := fmt.Sprint(<-inJob)
 			runtime.Gosched()
 			wg := &sync.WaitGroup{}
-			//th := []int{0, 1, 2, 3, 4, 5}
 			resultSlice := make([]chan string, 5, 5)
 			result := ""
 			for i := range resultSlice {
@@ -169,16 +140,12 @@ var MultiHash = func(in, out chan interface{}) {
 					defer wg.Done()
 					ch <- DataSignerCrc32(data)
 					runtime.Gosched() // даём поработать другим горутинам
-					//close(ch)
 				}(wg, resultSlice[i], fmt.Sprint(i)+data)
-				//result += DataSignerCrc32(fmt.Sprint(i) + data)
 			}
 			wg.Wait()
 			for _, ch := range resultSlice {
 				result += <-ch
 			}
-			//end := time.Since(start)
-			//println("MultiHash " + result + " " + fmt.Sprint(end))
 
 			outJob <- result
 		}(wgj, inJob, out)
@@ -202,7 +169,6 @@ var CombineResults = func(in, out chan interface{}) {
 	//endWG := time.Since(startWG)
 	//println("CombineResults result " + result + " " + fmt.Sprint(endWG))
 	out <- result
-
 }
 
 // сюда писать код
