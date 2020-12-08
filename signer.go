@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"runtime"
+	"sort"
 	"sync"
 	"time"
 )
@@ -78,7 +79,7 @@ var SingleHash = func(in, out chan interface{}) {
 	data := make([]string, 0)
 	for item := range in {
 		data = append(data, fmt.Sprint(item))
-		println("SingleHash <- " + fmt.Sprint(item))
+		//println("SingleHash <- " + fmt.Sprint(item))
 	}
 
 	goDataSignerCrc32 := func(dataIn string, outCrc chan string) {
@@ -95,16 +96,16 @@ var SingleHash = func(in, out chan interface{}) {
 			defer wg.Done()
 
 			item := fmt.Sprint(<-inJob)
-			start := time.Now()
+			//start := time.Now()
 			//println("SingleHash " + item)
 			chSrc32Out := make(chan string, 0)
 			chSrc32Out1 := make(chan string, 0)
 			go goDataSignerCrc32(item, chSrc32Out)
 			go goDataSignerCrc32(dataMd5, chSrc32Out1)
 
-			end := time.Since(start)
 			outJob <- (<-chSrc32Out + "~" + <-chSrc32Out1)
 
+			//end := time.Since(start)
 			//println("SingleHash " + fmt.Sprint(item) + " " + fmt.Sprint(end))
 
 		}(wg, inJob, out)
@@ -131,7 +132,7 @@ var MultiHash = func(in, out chan interface{}) {
 			data := fmt.Sprint(<-inJob)
 			runtime.Gosched()
 			wg := &sync.WaitGroup{}
-			resultSlice := make([]chan string, 5, 5)
+			resultSlice := make([]chan string, 6, 6)
 			result := ""
 			for i := range resultSlice {
 				resultSlice[i] = make(chan string, 1)
@@ -162,239 +163,16 @@ var CombineResults = func(in, out chan interface{}) {
 		data = append(data, fmt.Sprint(item))
 		//println("CombineResults " + fmt.Sprint(item))
 	}
+
+	sort.Slice(data, func(i, j int) bool { return data[i] < data[j] })
 	for _, v := range data {
-		result = result + "_" + v
+		if result != "" {
+			result += "_"
+		}
+		result = result + v
 	}
 
 	//endWG := time.Since(startWG)
 	//println("CombineResults result " + result + " " + fmt.Sprint(endWG))
 	out <- result
-}
-
-// сюда писать код
-func ExecutePipeline4(jobs ...job) {
-	// Объявляем переменные для входног/выходного каналов
-	//in := make(chan interface{}, 0)
-	//out := make(chan interface{}, 0)
-
-	//curI := 0
-
-	var in chan interface{}
-	var out chan interface{}
-
-	chans := make([]chan interface{}, 0)
-
-	// Бежим по массиву задач и запускаем горутины
-	//for i, _ := range jobs {
-	//for i: = 0; i < len(jobs); i++ {
-	for i := 0; i < len(jobs); i++ {
-		chans = append(chans, make(chan interface{}, 999))
-
-		//out := make(chan interface{}, 0)
-
-		if i == 0 {
-			in = nil
-		} else {
-			in = chans[i-1]
-		}
-		if i == len(jobs)-1 {
-			out = nil
-		} else {
-			out = chans[i]
-		}
-
-		go ExecuteGoroutine(jobs[i], in, out)
-	}
-	for {
-		if _, ok := <-out; !ok {
-			break
-		}
-	}
-
-}
-
-func ExecuteGoroutine(jobs job, in, out chan interface{}) {
-
-	//inGo := make(chan interface{}, 9999)
-	//outGo := make(chan interface{}, 9999)
-
-	if in == nil {
-		fmt.Printf("start\n")
-		//dataIn <- in
-		inJob := make(chan interface{}, 9999)
-		outJob := make(chan interface{}, 9999)
-
-		//ExecuteGoroutine(jobs, curI+1,
-		go func(inJob, outJob chan interface{}) {
-			jobs(inJob, outJob)
-			close(outJob)
-		}(inJob, outJob)
-		//inJob <- dataIn
-		runtime.Gosched()
-
-		for dataOut := range outJob {
-			fmt.Printf("dataOut %v\n", dataOut)
-			out <- dataOut
-		}
-
-		close(out)
-	} else if out == nil {
-		go func(inJob, outJob chan interface{}) {
-			jobs(inJob, outJob)
-		}(in, out)
-	} else {
-		for dataIn := range in {
-			fmt.Printf("dataIN %v\n", dataIn)
-			//dataIn <- in
-			inJob := make(chan interface{}, 9999)
-			outJob := make(chan interface{}, 9999)
-
-			//ExecuteGoroutine(jobs, curI+1,
-			go func(inJob, outJob chan interface{}) {
-				jobs(inJob, outJob)
-				close(outJob)
-			}(inJob, outJob)
-			inJob <- dataIn
-			runtime.Gosched()
-
-			for dataOut := range outJob {
-				fmt.Printf("dataOut %v\n", dataOut)
-				out <- dataOut
-			}
-		}
-
-		close(out)
-	}
-
-	/*
-
-			for dataOut := range outJob {
-				fmt.Printf("curI %v, dataOut %v\n", curI, dataOut)
-				if curI == len(jobs)-1 {
-					out <- dataOut
-				} else {
-					inGo := make(chan interface{}, 9999)
-					outGo := make(chan interface{}, 9999)
-					go ExecuteGoroutine(jobs, curI+1, inGo, outGo)
-					inGo <- dataOut
-					runtime.Gosched()
-					for dataGo := range outGo {
-						fmt.Printf("curI %v, dataGo %v\n", curI, dataGo)
-						out <- dataGo
-						//
-					}
-					close(outGo)
-
-				}
-			}
-
-		}
-	*/
-
-}
-
-func ExecuteGoroutine1(jobs []job, curI int, in chan interface{}) {
-
-	//inGo := make(chan interface{}, 9999)
-	//outGo := make(chan interface{}, 9999)
-	for dataIn := range in {
-		fmt.Printf("curI %v, dataIN %v\n", curI, dataIn)
-		//dataIn <- in
-		inJob := make(chan interface{}, 0)
-		outJob := make(chan interface{}, 0)
-
-		//ExecuteGoroutine(jobs, curI+1,
-		go jobs[curI](inJob, outJob)
-		inJob <- dataIn
-
-	}
-	//go ExecuteGoroutine(jobs, curI+1, out)
-
-	/*
-
-			for dataOut := range outJob {
-				fmt.Printf("curI %v, dataOut %v\n", curI, dataOut)
-				if curI == len(jobs)-1 {
-					out <- dataOut
-				} else {
-					inGo := make(chan interface{}, 9999)
-					outGo := make(chan interface{}, 9999)
-					go ExecuteGoroutine(jobs, curI+1, inGo, outGo)
-					inGo <- dataOut
-					runtime.Gosched()
-					for dataGo := range outGo {
-						fmt.Printf("curI %v, dataGo %v\n", curI, dataGo)
-						out <- dataGo
-						//
-					}
-					close(outGo)
-
-				}
-			}
-
-		}
-	*/
-
-}
-
-func ExecutePipeline2(jobs ...job) {
-	// Объявляем переменные для входног/выходного каналов
-	var in chan interface{}
-	var out chan interface{}
-
-	chans := make([]chan interface{}, 0)
-
-	// Бежим по массиву задач и запускаем горутины
-	for i, _ := range jobs {
-		chans = append(chans, make(chan interface{}, 999))
-
-		if i == 0 {
-			in = nil
-		} else {
-			in = chans[i-1]
-		}
-		out = chans[i]
-
-		/*
-			go func(job job, in chan interface{}, out chan interface{}) {
-				job(in, out)
-				runtime.Gosched()
-				close(out)
-			}(jobs[i], in, out)
-		*/
-
-		//go func(job job, in chan interface{}, out chan interface{}) {
-		if i == 0 {
-			//inJob := make(chan interface{})
-			outJob := make(chan interface{}, 10)
-			go jobs[i](nil, outJob)
-			//inJob <- data
-			//runtime.Gosched()
-			//out <- <-outJob
-			for data := range outJob {
-				out <- data
-			}
-		} else {
-			for data := range in {
-				inJob := make(chan interface{})
-				outJob := make(chan interface{})
-				go jobs[i](inJob, outJob)
-				inJob <- data
-				//runtime.Gosched()
-				out <- <-outJob
-				//runtime.Gosched()
-				close(outJob)
-			}
-
-		}
-		//close(out)
-		//}(jobs[i], in, out)
-	}
-	for {
-		if _, ok := <-out; !ok {
-			break
-		}
-	}
-	// Нужно получить значение из последнего потока
-	// Иначе выполнение основной горутины кончится раньше, чем все остальные
 }
