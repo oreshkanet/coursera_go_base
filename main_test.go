@@ -32,6 +32,8 @@ func TestSearch(t *testing.T) {
 
 // -----
 // go test -bench . -benchmem
+// go test -bench=BenchmarkRegex -cpuprofile cpu.out
+// go tool pprof perftest00.test cpu.out
 
 func BenchmarkSlow(b *testing.B) {
 	for i := 0; i < b.N; i++ {
