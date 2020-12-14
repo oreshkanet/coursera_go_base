@@ -46,10 +46,11 @@ func FastSearch(out io.Writer) {
 	r := regexp.MustCompile("@")
 	seenBrowsers := []string{}
 	uniqueBrowsers := 0
-	foundUsers := ""
+	//foundUsers := ""
 
 	lines := strings.Split(string(fileContents), "\n")
 
+	fmt.Fprintln(out, "found users:")
 	for i, line := range lines {
 		var user User
 		err := user.UnmarshalJSON([]byte(line))
@@ -125,13 +126,11 @@ func FastSearch(out io.Writer) {
 			continue
 		}
 
-		// log.Println("Android and MSIE user:", user["name"], user["email"])
 		email := r.ReplaceAllString(user.Email, " [at] ")
-		foundUsers += fmt.Sprintf("[%d] %s <%s>\n", i, user.Name, email)
+		fmt.Fprintln(out, fmt.Sprintf("[%d] %s <%s>", i, user.Name, email))
 	}
 
-	fmt.Fprintln(out, "found users:\n"+foundUsers)
-	fmt.Fprintln(out, "Total unique browsers", len(seenBrowsers))
+	fmt.Fprintln(out, "\nTotal unique browsers", len(seenBrowsers))
 }
 
 ///////////////////////////////////////////////////////////////////////
