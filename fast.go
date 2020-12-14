@@ -1,10 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"regexp"
 	"strings"
@@ -37,25 +37,29 @@ func FastSearch(out io.Writer) {
 	if err != nil {
 		panic(err)
 	}
+	defer file.Close()
 
-	fileContents, err := ioutil.ReadAll(file)
-	if err != nil {
-		panic(err)
-	}
+	reader := bufio.NewReader(file)
 
 	r := regexp.MustCompile("@")
 	seenBrowsers := []string{}
 	uniqueBrowsers := 0
-	//foundUsers := ""
-
-	lines := strings.Split(string(fileContents), "\n")
 
 	fmt.Fprintln(out, "found users:")
-	for i, line := range lines {
+
+	var line string
+	i := -1
+	for {
+		line, err = reader.ReadString('\n')
+		if err != nil && err == io.EOF {
+			break
+		}
+		i++
+
 		var user User
-		err := user.UnmarshalJSON([]byte(line))
-		if err != nil {
-			panic(err)
+
+		if errJSON := user.UnmarshalJSON([]byte(line)); errJSON != nil {
+			panic(errJSON)
 		}
 
 		isAndroid := false
