@@ -42,77 +42,51 @@ func FastSearch(out io.Writer) {
 	reader := bufio.NewReader(file)
 
 	r := regexp.MustCompile("@")
-	seenBrowsers := []string{}
+	seenBrowsers := make([]string, 0, 200)
 	uniqueBrowsers := 0
+	var needSeen bool
+	var isAndroid bool
+	var isMSIE bool
+	var user User
+	var browser string
+	var notSeenBefore bool
 
 	fmt.Fprintln(out, "found users:")
 
 	var line string
+	var endFile bool = false
 	i := -1
 	for {
+		if endFile {
+			break
+		}
 		line, err = reader.ReadString('\n')
 		if err != nil && err == io.EOF {
-			break
+			endFile = true
 		}
 		i++
 
-		var user User
-
-		if errJSON := user.UnmarshalJSON([]byte(line)); errJSON != nil {
-			panic(errJSON)
+		if err = user.UnmarshalJSON([]byte(line)); err != nil {
+			panic(err)
 		}
 
-		isAndroid := false
-		isMSIE := false
+		isAndroid = false
+		isMSIE = false
 
-		browsers := user.Browsers
-		/*
-			for _, browser := range browsers {
-				if strings.Contains(browser, "Android") {
-					isAndroid = true
-				}
-				if strings.Contains(browser, "MSIE") {
-					isMSIE = true
-				}
-				if isAndroid || isMSIE {
-					notSeenBefore := true
-					for _, item := range seenBrowsers {
-						if item == browser {
-							notSeenBefore = false
-							break
-						}
-					}
-					if notSeenBefore {
-						seenBrowsers = append(seenBrowsers, browser)
-						uniqueBrowsers++
-					}
-				}
-			}
-		*/
-
-		for _, browser := range browsers {
+		for _, browser = range user.Browsers {
+			needSeen = false
 			if strings.Contains(browser, "Android") {
-				//if ok, err := regexp.MatchString("Android", browser); ok && err == nil {
 				isAndroid = true
-				notSeenBefore := true
-				for _, item := range seenBrowsers {
-					if item == browser {
-						notSeenBefore = false
-					}
-				}
-				if notSeenBefore {
-					// log.Printf("SLOW New browser: %s, first seen: %s", browser, user["name"])
-					seenBrowsers = append(seenBrowsers, browser)
-					uniqueBrowsers++
-				}
+				needSeen = true
 			}
-		}
 
-		for _, browser := range browsers {
 			if strings.Contains(browser, "MSIE") {
-				//if ok, err := regexp.MatchString("MSIE", browser); ok && err == nil {
 				isMSIE = true
-				notSeenBefore := true
+				needSeen = true
+			}
+
+			if needSeen {
+				notSeenBefore = true
 				for _, item := range seenBrowsers {
 					if item == browser {
 						notSeenBefore = false
@@ -130,11 +104,10 @@ func FastSearch(out io.Writer) {
 			continue
 		}
 
-		email := r.ReplaceAllString(user.Email, " [at] ")
-		fmt.Fprintln(out, fmt.Sprintf("[%d] %s <%s>", i, user.Name, email))
+		fmt.Fprintln(out, fmt.Sprintf("[%d] %s <%s>", i, user.Name, r.ReplaceAllString(user.Email, " [at] ")))
 	}
 
-	fmt.Fprintln(out, "\nTotal unique browsers", len(seenBrowsers))
+	fmt.Fprintln(out, "\nTotal unique browsers", uniqueBrowsers)
 }
 
 ///////////////////////////////////////////////////////////////////////
