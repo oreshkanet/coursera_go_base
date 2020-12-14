@@ -52,20 +52,18 @@ func FastSearch(out io.Writer) {
 
 	fmt.Fprintln(out, "found users:")
 
-	var line string
-	var endFile bool = false
+	var line []byte
+	//var endFile bool = false
 	i := -1
 	for {
-		if endFile {
-			break
-		}
-		line, err = reader.ReadString('\n')
+
+		line, _, err = reader.ReadLine()
 		if err != nil && err == io.EOF {
-			endFile = true
+			break
 		}
 		i++
 
-		if err = user.UnmarshalJSON([]byte(line)); err != nil {
+		if err = user.UnmarshalJSON(line); err != nil {
 			panic(err)
 		}
 
