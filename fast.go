@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"strings"
 
 	json "encoding/json"
@@ -41,7 +40,7 @@ func FastSearch(out io.Writer) {
 
 	reader := bufio.NewReader(file)
 
-	r := regexp.MustCompile("@")
+	//r := regexp.MustCompile("@")
 	seenBrowsers := make([]string, 0, 200)
 	uniqueBrowsers := 0
 	var needSeen bool
@@ -104,7 +103,9 @@ func FastSearch(out io.Writer) {
 			continue
 		}
 
-		fmt.Fprintln(out, fmt.Sprintf("[%d] %s <%s>", i, user.Name, r.ReplaceAllString(user.Email, " [at] ")))
+		//fmt.Fprintln(out, "["+fmt.Sprint(i)+"] "+user.Name+" <"+r.ReplaceAllString(user.Email, " [at] ")+">")
+		//fmt.Fprintln(out, fmt.Sprintf("[%d] %s <%s>", i, user.Name, r.ReplaceAllString(user.Email, " [at] ")))
+		fmt.Fprintln(out, fmt.Sprintf("[%d] %s <%s>", i, user.Name, strings.ReplaceAll(user.Email, "@", " [at] ")))
 	}
 
 	fmt.Fprintln(out, "\nTotal unique browsers", uniqueBrowsers)
