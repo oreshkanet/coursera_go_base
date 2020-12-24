@@ -76,6 +76,36 @@ func SearchServer(w http.ResponseWriter, r *http.Request){
 	case "internal_error": 
 		w.WriteHeader(http.StatusInternalServerError)
 		return
+	case "unknown_error":
+		//w.WriteHeader(http.Status)
+		io.WriteString(w, "unknown error")
+		return
+	case "bad_request":
+		result, err := json.Marshal(SearchErrorResponse{
+			Error: "ErrorBadOrderField",
+		})
+		w.WriteHeader(http.StatusBadRequest)
+		if err == nil {
+			io.WriteString(w, string(result))
+		}
+		return
+	case "bad_request_unknown":
+		result, err := json.Marshal(SearchErrorResponse{
+			Error: "bad_request",
+		})
+		w.WriteHeader(http.StatusBadRequest)
+		if err == nil {
+			io.WriteString(w, string(result))
+		}
+		return
+	case "bad_request_cant_unpack":
+		w.WriteHeader(http.StatusBadRequest)
+		io.WriteString(w, "cant_unpack_json")
+		return
+	case "cant_unpack_json":
+		//w.WriteHeader(http.Status)
+		io.WriteString(w, "cant_unpack_json")
+		return
 	case "unauthorized":
 		w.WriteHeader(http.StatusUnauthorized)
 		return
@@ -139,19 +169,49 @@ func SearchServer(w http.ResponseWriter, r *http.Request){
 func TestServerErrors(t *testing.T) {
 	cases := []TestCase{
 		TestCase{
-			AccessToken: "unauthorized",
-			SearchRequest: &SearchRequest{},
-			Result: nil,
-			IsError: true,
-		},
-		TestCase{
 			AccessToken: "timeout",
 			SearchRequest: &SearchRequest{},
 			Result: nil,
 			IsError: true,
 		},
 		TestCase{
+			AccessToken: "unknown_error",
+			SearchRequest: &SearchRequest{},
+			Result: nil,
+			IsError: true,
+		},
+		TestCase{
+			AccessToken: "bad_request",
+			SearchRequest: &SearchRequest{},
+			Result: nil,
+			IsError: true,
+		},
+		TestCase{
+			AccessToken: "bad_request_unknown",
+			SearchRequest: &SearchRequest{},
+			Result: nil,
+			IsError: true,
+		},
+		TestCase{
+			AccessToken: "bad_request_cant_unpack",
+			SearchRequest: &SearchRequest{},
+			Result: nil,
+			IsError: true,
+		},
+		TestCase{
+			AccessToken: "unauthorized",
+			SearchRequest: &SearchRequest{},
+			Result: nil,
+			IsError: true,
+		},
+		TestCase{
 			AccessToken: "internal_error",
+			SearchRequest: &SearchRequest{},
+			Result: nil,
+			IsError: true,
+		},
+		TestCase{
+			AccessToken: "cant_unpack_json",
 			SearchRequest: &SearchRequest{},
 			Result: nil,
 			IsError: true,
@@ -164,7 +224,7 @@ func TestServerErrors(t *testing.T) {
 func TestSearch(t *testing.T) {
 	cases := []TestCase{
 		TestCase{
-			AccessToken: "_",
+			AccessToken: "single",
 			SearchRequest: &SearchRequest{
 				Query: "Boyd",
 				Limit: 10,
@@ -182,7 +242,7 @@ func TestSearch(t *testing.T) {
 			IsError: false,
 		},
 		TestCase{
-			AccessToken: "_",
+			AccessToken: "multi",
 			SearchRequest: &SearchRequest{
 				Query: "Nulla",
 				Limit: 1,
@@ -199,9 +259,67 @@ func TestSearch(t *testing.T) {
 			},
 			IsError: false,
 		},
+		TestCase{
+			AccessToken: "limit_error",
+			SearchRequest: &SearchRequest{
+				Limit: -10,
+				Offset: 0,
+			},
+			Result: &SearchResponse{},
+			IsError: true,
+		},
+		TestCase{
+			AccessToken: "offset_error",
+			SearchRequest: &SearchRequest{
+				Limit: 0,
+				Offset: -10,
+			},
+			Result: &SearchResponse{},
+			IsError: true,
+		},
+		TestCase{
+			AccessToken: "limit",
+			SearchRequest: &SearchRequest{
+				Limit: 50,
+			},
+			Result: &SearchResponse{},
+			IsError: true,
+		},
 	}
 
 	TestingSearchServer(t, cases)
+}
+
+func TestUnknownError(t *testing.T) {
+	cases := []TestCase{
+		TestCase{
+			AccessToken: "_",
+			SearchRequest: &SearchRequest{},
+			Result: nil,
+			IsError: true,
+		},
+	}
+	ts := httptest.NewServer(http.HandlerFunc(SearchServer))
+
+	for caseNum, item := range cases {
+		c := &SearchClient{
+			AccessToken:  item.AccessToken,
+			URL: "",//ts.URL,
+		}
+		result, err := c.FindUsers(*item.SearchRequest)
+
+		if err != nil && !item.IsError {
+			t.Errorf("[%d] unexpected error: %#v", caseNum, err)
+		} else if err == nil && item.IsError {
+			t.Errorf("[%d] expected error, got nil", caseNum)
+		} else if !reflect.DeepEqual(item.Result, result) {
+			t.Errorf("[%d] wrong result, expected %#v, got %#v", caseNum, item.Result, result)
+		} else {
+			t.Errorf("[%d] OK - %#v (%#v)", caseNum, item.AccessToken, fmt.Sprint(err))
+		}
+
+	}
+	ts.Close()
 }
 
 func TestingSearchServer(t *testing.T, cases []TestCase) {
@@ -216,13 +334,14 @@ func TestingSearchServer(t *testing.T, cases []TestCase) {
 
 		if err != nil && !item.IsError {
 			t.Errorf("[%d] unexpected error: %#v", caseNum, err)
-		}
-		if err == nil && item.IsError {
+		} else if err == nil && item.IsError {
 			t.Errorf("[%d] expected error, got nil", caseNum)
-		}
-		if !reflect.DeepEqual(item.Result, result) {
+		} else if !reflect.DeepEqual(item.Result, result) {
 			t.Errorf("[%d] wrong result, expected %#v, got %#v", caseNum, item.Result, result)
+		} else {
+			t.Errorf("[%d] OK - %#v (%#v)", caseNum, item.AccessToken, fmt.Sprint(err))
 		}
+
 	}
 	ts.Close()
 }
