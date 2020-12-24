@@ -265,24 +265,16 @@ func TestSearch(t *testing.T) {
 				Limit: -10,
 				Offset: 0,
 			},
-			Result: &SearchResponse{},
+			Result: nil,
 			IsError: true,
 		},
 		TestCase{
 			AccessToken: "offset_error",
 			SearchRequest: &SearchRequest{
-				Limit: 0,
+				Limit: 50,
 				Offset: -10,
 			},
-			Result: &SearchResponse{},
-			IsError: true,
-		},
-		TestCase{
-			AccessToken: "limit",
-			SearchRequest: &SearchRequest{
-				Limit: 50,
-			},
-			Result: &SearchResponse{},
+			Result: nil,
 			IsError: true,
 		},
 	}
@@ -315,7 +307,7 @@ func TestUnknownError(t *testing.T) {
 		} else if !reflect.DeepEqual(item.Result, result) {
 			t.Errorf("[%d] wrong result, expected %#v, got %#v", caseNum, item.Result, result)
 		} else {
-			t.Errorf("[%d] OK - %#v (%#v)", caseNum, item.AccessToken, fmt.Sprint(err))
+			fmt.Printf("[%d] OK - %#v (%#v)\n", caseNum, item.AccessToken, fmt.Sprint(err))
 		}
 
 	}
@@ -339,7 +331,7 @@ func TestingSearchServer(t *testing.T, cases []TestCase) {
 		} else if !reflect.DeepEqual(item.Result, result) {
 			t.Errorf("[%d] wrong result, expected %#v, got %#v", caseNum, item.Result, result)
 		} else {
-			t.Errorf("[%d] OK - %#v (%#v)", caseNum, item.AccessToken, fmt.Sprint(err))
+			fmt.Printf("[%d] OK - %#v (%#v)\n", caseNum, item.AccessToken, fmt.Sprint(err))
 		}
 
 	}
