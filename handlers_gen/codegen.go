@@ -45,8 +45,12 @@ func main() {
 
 	fmt.Fprintln(out, `package `+node.Name.Name)
 	fmt.Fprintln(out) // empty line
-	fmt.Fprintln(out, `import "encoding/binary"`)
-	fmt.Fprintln(out, `import "bytes"`)
+	fmt.Fprintln(out, `import "encoding/json"`)
+	fmt.Fprintln(out, `import "fmt"`)
+	fmt.Fprintln(out, `import "net/http"`)
+	fmt.Fprintln(out, `import "strconv"`)
+	fmt.Fprintln(out, `import "strings"`)
+	fmt.Fprintln(out, `import "unicode/utf8"`)
 	fmt.Fprintln(out) // empty line
 
 	for _, f := range node.Decls {
@@ -76,25 +80,25 @@ func main() {
 
 			needCodegen := false
 			for _, comment := range g.Doc.List {
-				needCodegen = needCodegen || strings.HasPrefix(comment.Text, "// cgen: binpack")
+				needCodegen = needCodegen || strings.HasPrefix(comment.Text, "// apigen:api")
 			}
 			if !needCodegen {
-				fmt.Printf("SKIP struct %#v doesnt have cgen mark\n", currType.Name.Name)
+				fmt.Printf("SKIP struct %#v doesnt have apigen mark\n", currType.Name.Name)
 				continue SPECS_LOOP
 			}
 
 			fmt.Printf("process struct %s\n", currType.Name.Name)
 			fmt.Printf("\tgenerating Unpack method\n")
 
-			fmt.Fprintln(out, "func (in *"+currType.Name.Name+") Unpack(data []byte) error {")
-			fmt.Fprintln(out, "	r := bytes.NewReader(data)")
+			//fmt.Fprintln(out, "func (in *"+currType.Name.Name+") Unpack(data []byte) error {")
+			//fmt.Fprintln(out, "	r := bytes.NewReader(data)")
 
 		FIELDS_LOOP:
 			for _, field := range currStruct.Fields.List {
 
 				if field.Tag != nil {
 					tag := reflect.StructTag(field.Tag.Value[1 : len(field.Tag.Value)-1])
-					if tag.Get("cgen") == "-" {
+					if tag.Get("apivalidator") == "-" {
 						continue FIELDS_LOOP
 					}
 				}
@@ -102,25 +106,29 @@ func main() {
 				fieldName := field.Names[0].Name
 				fileType := field.Type.(*ast.Ident).Name
 
-				fmt.Printf("\tgenerating code for field %s.%s\n", currType.Name.Name, fieldName)
+				fmt.Printf("\tgenerating code for field %s.%s (%s)\n", currType.Name.Name, fieldName, fileType)
 
-				switch fileType {
-				case "int":
-					intTpl.Execute(out, tpl{fieldName})
-				case "string":
-					strTpl.Execute(out, tpl{fieldName})
-				default:
-					log.Fatalln("unsupported", fileType)
-				}
+				/*
+									switch fileType {
+									case "int":
+										intTpl.Execute(out, tpl{fieldName})
+									case "string":
+										strTpl.Execute(out, tpl{fieldName})
+									default:
+										log.Fatalln("unsupported", fileType)
+					        }
+				*/
 			}
 
-			fmt.Fprintln(out, "	return nil")
-			fmt.Fprintln(out, "}") // end of Unpack func
-			fmt.Fprintln(out)      // empty line
+			/*
+							fmt.Fprintln(out, "	return nil")
+							fmt.Fprintln(out, "}") // end of Unpack func
+				      fmt.Fprintln(out)      // empty line
+			*/
 
 		}
 	}
 }
 
-// go build gen/* && ./codegen.exe pack/unpack.go  pack/marshaller.go
-// go run pack/*
+// go build ./handlers_gen/codegen.go
+// ./codegen.exe api.go api_handlers.go
