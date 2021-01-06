@@ -74,14 +74,14 @@ func (h *MyApi) handlerCreate(w http.ResponseWriter, r *http.Request) {
 	params.Name = r.FormValue("full_name")
 
 	params.Status = r.FormValue("status")
+	// apivalidator: default=user
+	if params.Status == "" {
+		params.Status = "user"
+	}
 	// apivalidator: enum=user|moderator|admin
 	if strings.Index("|user|moderator|admin|", "|"+params.Status+"|") < 0 {
 		getResponse(w, ApiError{http.StatusBadRequest, fmt.Errorf("status must be one of [user, moderator, admin]")})
 		return
-	}
-	// apivalidator: default=user
-	if params.Status == "" {
-		params.Status = "user"
 	}
 
 	// Конвертируем в Int
