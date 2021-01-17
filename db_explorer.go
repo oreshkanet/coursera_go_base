@@ -305,7 +305,7 @@ func (h *DbExplorer) postTableRecord(tableName string, recordID int, data map[st
 			// Пропускаем автоинрементные поля
 			continue
 		}
-		err := h.validateFieldType(curField, curFieldValue)
+		err := curField.validateFieldType(curFieldValue)
 		if err != nil {
 			return nil, APIError{http.StatusBadRequest, err}
 		}
@@ -381,32 +381,53 @@ func (h *DbExplorer) deleteTableRecord(tableName string, recordID int) (map[stri
 	}, nil
 }
 
+//*************************************************************************
+// Работа с БД
 
-func (h *DbExplorer) validateFieldType(field *TableField, currField interface{}) error {
+// Table - Таблица БД
+type Table struct {
+	Name string
+	Fields []*TableField
+}
+
+// TableField - колонки таблицы БД
+type TableField struct {
+	Name string
+	Type string
+	Collation sql.NullString
+	Nullable string
+	Key string
+	Default sql.NullString
+	Extra string
+	Priveleges string
+	Comment string
+}
+
+func (tf TableField) validateFieldType(currField interface{}) error {
 	// Проверка на NULL
 	if currField == nil {
-		if field.Nullable != "YES"{
-			return fmt.Errorf("field %s have invalid type", field.Name)
+		if tf.Nullable != "YES"{
+			return fmt.Errorf("field %s have invalid type", tf.Name)
 		}
 		return nil
 	}
 	// Проверка на тип
 	switch currField.(type) {
 	case int:
-		if field.Type == "int" {
+		if tf.Type == "int" {
 			return nil
 		}
 	case string:
-		if strings.Index(field.Type, "varchar") >= 0 || field.Type == "text" {
+		if strings.Index(tf.Type, "varchar") >= 0 || tf.Type == "text" {
 			return nil
 		}
 	case float64:
-		if field.Type == "double" {
+		if tf.Type == "double" {
 			return nil
 		}
 	}
 
-	return fmt.Errorf("field %s have invalid type", field.Name)
+	return fmt.Errorf("field %s have invalid type", tf.Name)
 }
 
 func (tf TableField) defaultValue() interface{} {
@@ -428,28 +449,6 @@ func (tf TableField) defaultValue() interface{} {
 	}
 
 	return v
-}
-
-//*************************************************************************
-// Работа с БД
-
-// Table - Таблица БД
-type Table struct {
-	Name string
-	Fields []*TableField
-}
-
-// TableField - колонки таблицы БД
-type TableField struct {
-	Name string
-	Type string
-	Collation sql.NullString
-	Nullable string
-	Key string
-	Default sql.NullString
-	Extra string
-	Priveleges string
-	Comment string
 }
 
 func (h *DbExplorer) updateTablesCache() {
