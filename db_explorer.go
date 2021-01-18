@@ -185,7 +185,7 @@ func (h *DbExplorer) getTableRecord(tableName string, recordID int) (map[string]
 
 	// Ищем первичный ключ
 	for _, curField := range table.Fields {
-		if curField.Key == "PRI" {
+		if curField.Key {
 			queryText += fmt.Sprintf("\nWHERE %s=?", curField.Name)
 			break
 		}
@@ -235,7 +235,7 @@ func (h *DbExplorer) putTableRecord(tableName string, data map[string]interface{
 	var PKName string
 	
 	for _, curField := range table.Fields {
-		if curField.Key == "PRI" {
+		if curField.Key {
 			PKName = curField.Name
 		}
 		if curField.Extra == "auto_increment" {
@@ -297,7 +297,7 @@ func (h *DbExplorer) postTableRecord(tableName string, recordID int, data map[st
 		if !curFieldExist {
 			continue
 		}
-		if curField.Key == "PRI" {
+		if curField.Key {
 			// Первичный ключ обновлять нельзя!
 			return nil, APIError{http.StatusBadRequest, fmt.Errorf("field %s have invalid type", curField.Name)}
 		}
@@ -319,7 +319,7 @@ func (h *DbExplorer) postTableRecord(tableName string, recordID int, data map[st
 	
 	// Ищем первичный ключ
 	for _, curField := range table.Fields {
-		if curField.Key == "PRI" {
+		if curField.Key {
 			queryText += fmt.Sprintf("\nWHERE %s=?", curField.Name)
 			queryParams = append(queryParams, recordID)
 			break
@@ -360,7 +360,7 @@ func (h *DbExplorer) deleteTableRecord(tableName string, recordID int) (map[stri
 
 	// Ищем первичный ключ
 	for _, curField := range table.Fields {
-		if curField.Key == "PRI" {
+		if curField.Key {
 			queryText += fmt.Sprintf("\nWHERE %s=?", curField.Name)
 			break
 		}
@@ -395,8 +395,8 @@ type TableField struct {
 	Name string
 	Type string
 	Collation sql.NullString
-	Nullable string
-	Key string
+	Nullable bool
+	Key bool
 	Default sql.NullString
 	Extra string
 	Priveleges string
@@ -406,7 +406,7 @@ type TableField struct {
 func (tf TableField) validateFieldType(currField interface{}) error {
 	// Проверка на NULL
 	if currField == nil {
-		if tf.Nullable != "YES"{
+		if !tf.Nullable {
 			return fmt.Errorf("field %s have invalid type", tf.Name)
 		}
 		return nil
@@ -436,13 +436,13 @@ func (tf TableField) defaultValue() interface{} {
 	switch {
 	case tf.Type == "text":
 		v = new(string)
-	case tf.Type == "int" && tf.Nullable == "YES":
+	case tf.Type == "int" && tf.Nullable:
 		v = nil
-	case tf.Type == "int" && tf.Nullable != "YES":
+	case tf.Type == "int" && !tf.Nullable:
 		v = new(int)
-	case strings.Contains(tf.Type, "varchar") && tf.Nullable == "YES":
+	case strings.Contains(tf.Type, "varchar") && tf.Nullable:
 		v = nil
-	case strings.Contains(tf.Type, "varchar") && tf.Nullable != "YES":
+	case strings.Contains(tf.Type, "varchar") && !tf.Nullable:
 		v = new(string)
 	default:
 		v = new(interface{})
@@ -479,10 +479,21 @@ func (h *DbExplorer) updateTablesCache() {
 
 		for dbFields.Next() {
 			var field = &TableField{}
-			err = dbFields.Scan(&field.Name, &field.Type, &field.Collation, &field.Nullable, &field.Key, &field.Default, &field.Extra, &field.Priveleges, &field.Comment)
+			var Nullable string
+			var Key string
+			err = dbFields.Scan(&field.Name, &field.Type, &field.Collation, &Nullable, &Key, &field.Default, &field.Extra, &field.Priveleges, &field.Comment)
 			if err != nil {
 				panic(fmt.Sprintf("Не удалось получить колонки таблицы %s: %s", curTable.Name, err.Error()))
 			}
+			if strings.ToLower(Nullable) == "yes" {
+				field.Nullable = true
+			}
+			if strings.ToLower(Key) == "pri" {
+				field.Key = true
+			}
+			field.Name = strings.ToLower(field.Name)
+			field.Type = strings.ToLower(field.Type)
+
 			curTable.Fields = append(curTable.Fields, field)
 		}
 	}
@@ -503,13 +514,21 @@ func (h *DbExplorer) convertRecordToObject(fields []*TableField, row *sql.Rows) 
 		switch {
 		case column.Type == "text":
 			v = new(string)
-		case column.Type == "int" && column.Nullable == "YES":
-			v = new(sql.NullInt32)
-		case column.Type == "int" && column.Nullable != "YES":
-			v = new(int)
-		case strings.Contains(column.Type, "varchar") && column.Nullable == "YES":
+		case strings.Contains(column.Type, "int") && column.Nullable:
+			v = new(sql.NullInt64)
+		case strings.Contains(column.Type, "int") && !column.Nullable:
+			v = new(int64)
+		case (column.Type == "float" || column.Type == "double") && column.Nullable:
+			v = new(sql.NullFloat64)
+		case (column.Type == "float" || column.Type == "double") && !column.Nullable:
+			v = new(float64)
+		case strings.Contains(column.Type, "numeric") && column.Nullable:
+			v = new(sql.NullFloat64)
+		case strings.Contains(column.Type, "numeric") && !column.Nullable:
+			v = new(float64)
+		case strings.Contains(column.Type, "varchar") && column.Nullable:
 			v = new(sql.NullString)
-		case strings.Contains(column.Type, "varchar") && column.Nullable != "YES":
+		case strings.Contains(column.Type, "varchar") && !column.Nullable:
 			v = new(string)
 		default:
 			v = new(interface{})
@@ -526,16 +545,20 @@ func (h *DbExplorer) convertRecordToObject(fields []*TableField, row *sql.Rows) 
 
 	for i, column := range fields {
 		// По типу колонки кладем в переменную значение нужного типа
-		switch {
-		case column.Type == "int" && column.Nullable == "YES":
-			v := values[i].(*sql.NullInt32)
+		switch v := values[i].(type){
+		case *sql.NullInt64:
 			if v.Valid {
-				object[column.Name] = v.Int32
+				object[column.Name] = v.Int64
 			} else {
 				object[column.Name] = nil
 			}
-		case strings.Contains(column.Type, "varchar") && column.Nullable == "YES":
-			v := values[i].(*sql.NullString)
+		case *sql.NullFloat64:
+			if v.Valid {
+				object[column.Name] = v.Float64
+			} else {
+				object[column.Name] = nil
+			}
+		case *sql.NullString:
 			if v.Valid {
 				object[column.Name] = v.String
 			} else {
