@@ -1,5 +1,8 @@
 syntax = "proto3";
 
+// Установка плагина для protobuf под go
+// go get github.com/golang/protobuf/protoc-gen-go
+
 // protoc --go_out=. *.proto
 
 package main;
