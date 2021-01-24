@@ -57,15 +57,15 @@ func newAdminManager() *adminManager {
 type bizManager struct{}
 
 func (*bizManager) Check(ctx context.Context, nothing *Nothing) (*Nothing, error) {
-	return nil, nil
+	return nothing, nil
 }
 
-func (*bizManager) Add(ctx context.Context, nothin *Nothing) (*Nothing, error) {
-	return nil, nil
+func (*bizManager) Add(ctx context.Context, nothing *Nothing) (*Nothing, error) {
+	return nothing, nil
 }
 
 func (*bizManager) Test(ctx context.Context, nothing *Nothing) (*Nothing, error) {
-	return nil, nil
+	return nothing, nil
 }
 
 func newBizManager() *bizManager {
