@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"sync"
@@ -16,6 +17,9 @@ type serverGRPC struct {
 	lis    net.Listener
 }
 
+type ACL struct {
+}
+
 var (
 	srvGRPC serverGRPC = serverGRPC{
 		Server: grpc.NewServer(),
@@ -24,6 +28,12 @@ var (
 
 // StartMyMicroservice - Старт микросервиса
 func StartMyMicroservice(ctx context.Context, listenAddr string, ACLData string) error {
+
+	var ACL = make(map[string][]string, 0)
+	err := json.Unmarshal([]byte(ACLData), &ACL)
+	if err != nil {
+		return err
+	}
 
 	lis, err := net.Listen("tcp", ":8082")
 	if err != nil {
