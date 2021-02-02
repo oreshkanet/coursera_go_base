@@ -26,4 +26,5 @@ func main() {
 	if err != nil {
 		fmt.Printf("cant start server initial: %v", err)
 	}
+
 }
