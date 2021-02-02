@@ -100,31 +100,11 @@ func unaryInterceptor(
 	info *grpc.UnaryServerInfo,
 	handler grpc.UnaryHandler,
 ) (interface{}, error) {
-	//start := time.Now()
-	md, _ := metadata.FromIncomingContext(ctx)
 
-	var consumer string = "unknown"
-	consumers := md["consumer"]
-	if len(consumers) > 0 {
-		consumer = consumers[0]
+	err := authLogStatistics(ctx, info.FullMethod)
+	if err != nil {
+		return nil, err
 	}
-	methodEnabled := false
-	if cons, consExist := ACL[consumer]; consExist {
-		for _, pattern := range cons {
-			if v, _ := regexp.MatchString(pattern, info.FullMethod); v {
-				methodEnabled = true
-				break
-			}
-		}
-	}
-	if !methodEnabled {
-		return nil, status.Errorf(codes.Unauthenticated, "Unauthenticated error")
-	}
-
-	//go func() {
-	loggerChannel <- &Event{Timestamp: 0, Host: lisAddr, Consumer: consumer, Method: info.FullMethod}
-	//fmt.Println(info.FullMethod)
-	//}()
 
 	reply, err := handler(ctx, req)
 
@@ -150,33 +130,13 @@ func streamInterceptor(
 	// Call 'handler' to invoke the stream handler before this function returns
 
 	ctx := stream.Context()
-	md, _ := metadata.FromIncomingContext(ctx)
 
-	var consumer string = "unknown"
-	consumers := md["consumer"]
-	if len(consumers) > 0 {
-		consumer = consumers[0]
-	}
-	methodEnabled := false
-	if cons, consExist := ACL[consumer]; consExist {
-		for _, pattern := range cons {
-			if v, _ := regexp.MatchString(pattern, info.FullMethod); v {
-				methodEnabled = true
-				break
-			}
-		}
-	}
-	if !methodEnabled {
-		return status.Errorf(codes.Unauthenticated, "Unauthenticated error")
+	err := authLogStatistics(ctx, info.FullMethod)
+	if err != nil {
+		return err
 	}
 
-	//go func() {
-	loggerChannel <- &Event{Timestamp: 0, Host: lisAddr, Consumer: consumer, Method: info.FullMethod}
-	//	fmt.Println(info.FullMethod)
-	//}()
-	//time.Sleep(2 * time.Millisecond)
-
-	err := handler(srv, stream)
+	err = handler(srv, stream)
 
 	/*
 		fmt.Printf(`--
@@ -192,17 +152,50 @@ func streamInterceptor(
 	return err
 }
 
-func writeLogAndStatistics(ctx context.Context, method string) {
+func authLogStatistics(
+	ctx context.Context,
+	method string,
+) error {
+	// Call 'handler' to invoke the stream handler before this function returns
 
-	var consumer = "unknown"
-	if headers, ok := metadata.FromIncomingContext(ctx); ok {
-		consumers := headers["consumer"]
-		if len(consumers) > 0 {
-			consumer = consumers[0]
+	md, _ := metadata.FromIncomingContext(ctx)
+
+	var consumer string = "unknown"
+	consumers := md["consumer"]
+	if len(consumers) > 0 {
+		consumer = consumers[0]
+	}
+	methodEnabled := false
+	if cons, consExist := ACL[consumer]; consExist {
+		for _, pattern := range cons {
+			if v, _ := regexp.MatchString(pattern, method); v {
+				methodEnabled = true
+				break
+			}
 		}
 	}
+	if !methodEnabled {
+		return status.Errorf(codes.Unauthenticated, "Unauthenticated error")
+	}
 
-	loggerChannel <- &Event{Timestamp: 0, Host: lisAddr, Consumer: consumer, Method: method}
+	//go func() {
+	loggerChannel <- &Event{Timestamp: time.Now().UnixNano(), Host: lisAddr, Consumer: consumer, Method: method}
+	//	fmt.Println(info.FullMethod)
+	//}()
+	//time.Sleep(2 * time.Millisecond)
+
+	/*
+		fmt.Printf(`--
+			after incoming call=%v
+			req=%#v
+			reply=%#v
+			time=%v
+			md=%v
+			err=%v
+			`, info.FullMethod, req, reply, time.Since(start), md, err)
+	*/
+
+	return nil
 }
 
 /***************************************************************************
