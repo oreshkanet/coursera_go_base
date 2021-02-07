@@ -17,90 +17,108 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type serverGRPC struct {
-	Server *grpc.Server
-	lis    net.Listener
-	ACL    map[string][]string
-}
-
-/*
-type ACL struct {
-}
-*/
-
-var (
-	srvGRPC serverGRPC = serverGRPC{
-		Server: grpc.NewServer(),
-	}
-	ACL                          = make(map[string][]string, 0)
-	loggerChannel  chan *Event   = make(chan *Event, 0)
-	loggerChannels []chan *Event = make([]chan *Event, 0, 0)
-	lisAddr        string        = ""
-)
-
 // StartMyMicroservice - Старт микросервиса
 func StartMyMicroservice(ctx context.Context, listenAddr string, ACLData string) error {
+	// Инициализируем экземпляр сервера
+	var srv = &serverGRPC{
+		listenAddr:     listenAddr + ":8082",
+		ACL:            make(map[string][]string, 0),
+		logChans:       make([]chan *Event, 0, 0),
+		statByMethod:   make(map[string]uint64),
+		statByConsumer: make(map[string]uint64),
+	}
 
-	ACL = make(map[string][]string, 0)
-	err := json.Unmarshal([]byte(ACLData), &ACL)
+	// Парсим ACL для проверки авторизации
+	err := json.Unmarshal([]byte(ACLData), &srv.ACL)
 	if err != nil {
 		return err
 	}
 
-	lisAddr = listenAddr + ":8082"
-
+	// Запускаем прослушивание порта
 	lis, err := net.Listen("tcp", ":8082")
 	if err != nil {
 		return err
 	}
 
 	// В отдельной горутине запускаем чтение из контекста признака закрытия сервера
-	go func(_lis net.Listener) {
-		<-ctx.Done()
-		fmt.Println("stop server at :8082")
-		// Закрываем все каналы
-
-		for _, ch1 := range loggerChannels {
-			close(ch1)
-		}
-		close(loggerChannel)
-
-		loggerChannels = make([]chan *Event, 0, 0)
-		loggerChannel = make(chan *Event, 0)
-		_lis.Close()
-	}(lis)
-
 	go func() {
-		for event := range loggerChannel {
-			for _, ch1 := range loggerChannels {
-				ch1 <- event
-			}
+		<-ctx.Done()
+		// fmt.Println("stop server at :8082")
+
+		// Закрываем все каналы, чтобы не было протечек
+		for _, logChan := range srv.logChans {
+			close(logChan)
 		}
+
+		// Закрываем порт
+		lis.Close()
 	}()
 
+	// Создаем новый gRPC сервер
 	server := grpc.NewServer(
-		grpc.UnaryInterceptor(unaryInterceptor),
-		grpc.StreamInterceptor(streamInterceptor),
+		grpc.UnaryInterceptor(srv.unaryInterceptor),
+		grpc.StreamInterceptor(srv.streamInterceptor),
 	)
+	RegisterBizServer(server, newBizManager(srv))
+	RegisterAdminServer(server, newAdminManager(srv))
 
-	RegisterBizServer(server, newBizManager())
-	RegisterAdminServer(server, newAdminManager())
-
-	fmt.Println("starting server at :8082")
+	// Запускаем прослушивание порта
 	go server.Serve(lis)
+	// fmt.Println("starting server at :8082")
 
 	return nil
-
 }
 
-func unaryInterceptor(
+type serverGRPC struct {
+	mu             sync.RWMutex
+	listenAddr     string
+	ACL            map[string][]string
+	logChans       []chan *Event
+	statByMethod   map[string]uint64
+	statByConsumer map[string]uint64
+}
+
+func (s *serverGRPC) addLoggerChannel(newlogChan chan *Event) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.logChans = append(s.logChans, newlogChan)
+}
+
+func (s *serverGRPC) addLoggerEvent(event *Event) {
+	for _, logChan := range s.logChans {
+		logChan <- event
+	}
+}
+
+func (s *serverGRPC) addStatByMethod(method string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, isExists := s.statByMethod[method]; !isExists {
+		s.statByMethod[method] = 1
+	} else {
+		s.statByMethod[method]++
+	}
+}
+
+func (s *serverGRPC) addStatByConsumer(consumer string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, isExists := s.statByConsumer[consumer]; !isExists {
+		s.statByConsumer[consumer] = 1
+	} else {
+		s.statByConsumer[consumer]++
+	}
+}
+
+func (s *serverGRPC) unaryInterceptor(
 	ctx context.Context,
 	req interface{},
 	info *grpc.UnaryServerInfo,
 	handler grpc.UnaryHandler,
 ) (interface{}, error) {
 
-	err := authLogStatistics(ctx, info.FullMethod)
+	err := s.authLogStatistics(ctx, info.FullMethod)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +128,7 @@ func unaryInterceptor(
 	return reply, err
 }
 
-func streamInterceptor(
+func (s *serverGRPC) streamInterceptor(
 	srv interface{},
 	stream grpc.ServerStream,
 	info *grpc.StreamServerInfo,
@@ -118,7 +136,7 @@ func streamInterceptor(
 
 	ctx := stream.Context()
 
-	err := authLogStatistics(ctx, info.FullMethod)
+	err := s.authLogStatistics(ctx, info.FullMethod)
 	if err != nil {
 		return err
 	}
@@ -128,21 +146,23 @@ func streamInterceptor(
 	return err
 }
 
-func authLogStatistics(
+func (s *serverGRPC) authLogStatistics(
 	ctx context.Context,
 	method string,
 ) error {
-	// Call 'handler' to invoke the stream handler before this function returns
-
+	// Получаем метадату из контекста
 	md, _ := metadata.FromIncomingContext(ctx)
 
+	// Парсим консьмера
 	var consumer string = "unknown"
 	consumers := md["consumer"]
 	if len(consumers) > 0 {
 		consumer = consumers[0]
 	}
+
+	// Проверяем права доступа консьмера на метод
 	methodEnabled := false
-	if cons, consExist := ACL[consumer]; consExist {
+	if cons, consExist := s.ACL[consumer]; consExist {
 		for _, pattern := range cons {
 			if v, _ := regexp.MatchString(pattern, method); v {
 				methodEnabled = true
@@ -154,22 +174,17 @@ func authLogStatistics(
 		return status.Errorf(codes.Unauthenticated, "Unauthenticated error")
 	}
 
-	//go func() {
-	loggerChannel <- &Event{Timestamp: time.Now().UnixNano(), Host: lisAddr, Consumer: consumer, Method: method}
-	//	fmt.Println(info.FullMethod)
-	//}()
-	//time.Sleep(2 * time.Millisecond)
+	// Добавляем в лог событие
+	s.addLoggerEvent(&Event{
+		Timestamp: time.Now().UnixNano(),
+		Host:      s.listenAddr,
+		Consumer:  consumer,
+		Method:    method,
+	})
 
-	/*
-		fmt.Printf(`--
-			after incoming call=%v
-			req=%#v
-			reply=%#v
-			time=%v
-			md=%v
-			err=%v
-			`, info.FullMethod, req, reply, time.Since(start), md, err)
-	*/
+	// Добавляем статистику
+	s.addStatByConsumer(consumer)
+	s.addStatByMethod(method)
 
 	return nil
 }
@@ -179,48 +194,20 @@ func authLogStatistics(
 ***************************************************************************/
 
 type adminManager struct {
-	mu            sync.RWMutex
-	addLogChannel func(chan *Event)
+	srv *serverGRPC
 }
 
-func (*adminManager) Logging(inStream *Nothing, srv Admin_LoggingServer) error {
-	//go writeLogAndStatistics(srv.Context(), "/main.Admin/Logging")
-	//loggerChannel <- &Event{Timestamp: 0, Host: "127.0.0.1:", Consumer: "logger", Method: "main.Admin/Logging"}
-
+func (adm *adminManager) Logging(inStream *Nothing, srv Admin_LoggingServer) error {
+	// Создаем новый канал, в который будут логироваться события
 	logChannel := make(chan *Event, 0)
-	addLogChannel(logChannel)
+	// Добавляем канал в общий слайс каналов текущего сервера
+	adm.srv.addLoggerChannel(logChannel)
 
-	/*
-		go func(_server *Admin_LoggingServer, _ch1 chan *Event) {
-			for out := range _ch1 {
-				&_server.Send(out)
-				break
-			}
-
-				go func(_server Admin_LoggingServer, _ch1 chan *Event) {
-					for {
-						out := <-c
-						_server.Send(out)
-						break
-					}
-				}(server, c)
-
-		}(&outStream, loggerChannel)
-	*/
-
-	//var wg sync.WaitGroup
-	//wg.Add(1)
-
-	loggerChannels = append(loggerChannels, logChannel)
-	//go func() {
-	//defer wg.Done()
+	// В цикле слушаем канал, а заодно и проверяем контекст на закрытие
 	for {
 		select {
-		//case <-(*_srv).Context().Done():
-		//close(*_ch)
-		//	return //outStream.Context().Err()
 		case <-srv.Context().Done():
-			fmt.Println(srv.Context().Err().Error())
+			// fmt.Println(srv.Context().Err().Error())
 			return nil
 		case s := <-logChannel:
 			err := srv.SendMsg(s)
@@ -230,70 +217,22 @@ func (*adminManager) Logging(inStream *Nothing, srv Admin_LoggingServer) error {
 			}
 		}
 	}
-	//}()
-
-	/*
-		logChannel <- &Event{Timestamp: 0, Host: "127.0.0.1:", Consumer: "logger", Method: "main.Admin/Logging"}
-		logChannel <- &Event{Timestamp: 0, Host: "127.0.0.1:", Consumer: "logger", Method: "main.Admin/Logging"}
-		logChannel <- &Event{Timestamp: 0, Host: "127.0.0.1:", Consumer: "logger", Method: "main.Admin/Logging"}
-		logChannel <- &Event{Timestamp: 0, Host: "127.0.0.1:", Consumer: "logger", Method: "main.Admin/Logging"}
-	*/
-
-	/*
-		statChannel := time.NewTicker(time.Duration(100) * time.Millisecond)
-		go func() {
-
-			for {
-				select {
-				case <-statChannel.C:
-					err := srv.SendMsg(&Event{Timestamp: 0, Host: "127.0.0.1:", Consumer: "logger", Method: "main.Admin/Logging"})
-					if err != nil {
-						return
-					}
-					return
-				}
-			}
-
-		}()
-	*/
-
-	/*
-		for {
-			select {
-			case <-srv.Context().Done():
-				return srv.Context().Err()
-			case s := <-logChannel:
-				err := srv.Send(s)
-				if err != nil {
-					return nil
-				}
-			}
-		}
-	*/
-	//wg.Wait()
-
-	return nil
 }
 
-func (*adminManager) Statistics(statInterval *StatInterval, srv Admin_StatisticsServer) error {
-	//writeLogAndStatistics(srv.Context(), "/main.Admin/Statistics")
-	//loggerChannel = make(chan *Event, 10)
-	//writeLogAndStatistics(ctx, "/main.Admin/Statistics")
-	//loggerChannel <- &Event{Timestamp: 0, Host: "127.0.0.1:", Consumer: "logger", Method: "main.Biz/Logging"}
-
+func (adm *adminManager) Statistics(statInterval *StatInterval, srv Admin_StatisticsServer) error {
 	statChannel := time.NewTicker(time.Duration(statInterval.IntervalSeconds) * time.Second)
-	//go func() {
 
 	for {
 		select {
 		case <-statChannel.C:
-			/*
-				err := srv.Send(&Stat{ByMethod: map[string]uint64{},
-					ByConsumer: map[string]uint64{}})
-				if err != nil {
-					return nil
-				}
-			*/
+			err := srv.Send(&Stat{
+				ByMethod:   adm.srv.statByMethod,
+				ByConsumer: adm.srv.statByConsumer,
+			})
+			if err != nil {
+				return nil
+			}
+
 			return nil
 		}
 	}
@@ -302,9 +241,9 @@ func (*adminManager) Statistics(statInterval *StatInterval, srv Admin_Statistics
 	return nil
 }
 
-func newAdminManager() *adminManager {
+func newAdminManager(srv *serverGRPC) *adminManager {
 	return &adminManager{
-		//addLogChannel:
+		srv: srv,
 	}
 }
 
@@ -312,26 +251,24 @@ func newAdminManager() *adminManager {
 * Admin Manager
 ***************************************************************************/
 
-type bizManager struct{}
+type bizManager struct {
+	srv *serverGRPC
+}
 
 func (*bizManager) Check(ctx context.Context, nothing *Nothing) (*Nothing, error) {
-	//writeLogAndStatistics(ctx, "/main.Biz/Check")
-	//loggerChannel <- &Event{Timestamp: 0, Host: "127.0.0.1:", Consumer: consumer, Method: "main.Biz/Logging"}
 	return nothing, nil
 }
 
 func (*bizManager) Add(ctx context.Context, nothing *Nothing) (*Nothing, error) {
-	//writeLogAndStatistics(ctx, "/main.Biz/Add")
-	//loggerChannel <- &Event{Timestamp: 0, Host: "127.0.0.1:", Consumer: "logger", Method: "main.Biz/Logging"}
 	return nothing, nil
 }
 
 func (*bizManager) Test(ctx context.Context, nothing *Nothing) (*Nothing, error) {
-	//writeLogAndStatistics(ctx, "/main.Biz/Test")
-	//loggerChannel <- &Event{Timestamp: 0, Host: "127.0.0.1:", Consumer: "logger", Method: "main.Biz/Logging"}
 	return nothing, nil
 }
 
-func newBizManager() *bizManager {
-	return &bizManager{}
+func newBizManager(srv *serverGRPC) *bizManager {
+	return &bizManager{
+		srv: srv,
+	}
 }
