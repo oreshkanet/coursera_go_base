@@ -74,6 +74,7 @@ type serverGRPC struct {
 	listenAddr     string
 	ACL            map[string][]string
 	logChans       []chan *Event
+	stats          []*Stat
 	statByMethod   map[string]uint64
 	statByConsumer map[string]uint64
 }
@@ -91,23 +92,21 @@ func (s *serverGRPC) addLoggerEvent(event *Event) {
 	}
 }
 
-func (s *serverGRPC) addStatByMethod(method string) {
+func (s *serverGRPC) addStats(method string, consumer string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, isExists := s.statByMethod[method]; !isExists {
-		s.statByMethod[method] = 1
-	} else {
-		s.statByMethod[method]++
-	}
-}
 
-func (s *serverGRPC) addStatByConsumer(consumer string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, isExists := s.statByConsumer[consumer]; !isExists {
-		s.statByConsumer[consumer] = 1
-	} else {
-		s.statByConsumer[consumer]++
+	for _, stat := range s.stats {
+		if _, isExists := stat.ByMethod[method]; !isExists {
+			stat.ByMethod[method] = 1
+		} else {
+			stat.ByMethod[method]++
+		}
+		if _, isExists := stat.ByConsumer[consumer]; !isExists {
+			stat.ByConsumer[consumer] = 1
+		} else {
+			stat.ByConsumer[consumer]++
+		}
 	}
 }
 
@@ -183,8 +182,7 @@ func (s *serverGRPC) authLogStatistics(
 	})
 
 	// Добавляем статистику
-	s.addStatByConsumer(consumer)
-	s.addStatByMethod(method)
+	s.addStats(method, consumer)
 
 	return nil
 }
@@ -220,25 +218,33 @@ func (adm *adminManager) Logging(inStream *Nothing, srv Admin_LoggingServer) err
 }
 
 func (adm *adminManager) Statistics(statInterval *StatInterval, srv Admin_StatisticsServer) error {
-	statChannel := time.NewTicker(time.Duration(statInterval.IntervalSeconds) * time.Second)
+	// Создаем объект статистики
+	stat := &Stat{
+		Timestamp:  time.Now().UnixNano(),
+		ByMethod:   make(map[string]uint64),
+		ByConsumer: make(map[string]uint64),
+	}
+	// Добавляем его в слайс статов
+	adm.srv.stats = append(adm.srv.stats, stat)
 
+	// Создаем канал с таймером
+	statChannel := time.NewTicker(time.Duration(statInterval.IntervalSeconds) * time.Second)
 	for {
 		select {
+		case <-srv.Context().Done():
+			statChannel.Stop()
+			// fmt.Println(srv.Context().Err().Error())
+			return nil
 		case <-statChannel.C:
-			err := srv.Send(&Stat{
-				ByMethod:   adm.srv.statByMethod,
-				ByConsumer: adm.srv.statByConsumer,
-			})
+			err := srv.Send(stat)
 			if err != nil {
 				return nil
 			}
-
-			return nil
+			// После отправки статистики обнуляем ее
+			stat.ByMethod = make(map[string]uint64)
+			stat.ByConsumer = make(map[string]uint64)
 		}
 	}
-
-	//}()
-	return nil
 }
 
 func newAdminManager(srv *serverGRPC) *adminManager {

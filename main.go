@@ -1,8 +1,9 @@
 package main
 
 import (
-	"context"
+	//"context"
 	"fmt"
+	"time"
 )
 
 const (
@@ -21,10 +22,21 @@ const (
 func main() {
 	println("usage: go test -v")
 
-	ctx, _ := context.WithCancel(context.Background())
-	err := StartMyMicroservice(ctx, listenAddrMain, ACLDataMain)
-	if err != nil {
-		fmt.Printf("cant start server initial: %v", err)
+	/*
+		ctx, _ := context.WithCancel(context.Background())
+		err := StartMyMicroservice(ctx, listenAddrMain, ACLDataMain)
+		if err != nil {
+			fmt.Printf("cant start server initial: %v", err)
+		}
+	*/
+
+	statChannel := time.NewTicker(time.Duration(2) * time.Second)
+
+	for {
+		select {
+		case <-statChannel.C:
+			fmt.Println(time.Now())
+		}
 	}
 
 }
