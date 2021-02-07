@@ -59,12 +59,12 @@ func StartMyMicroservice(ctx context.Context, listenAddr string, ACLData string)
 		<-ctx.Done()
 		fmt.Println("stop server at :8082")
 		// Закрываем все каналы
-		/*
-			for _, ch1 := range loggerChannels {
-				close(ch1)
-			}
-			close(loggerChannel)
-		*/
+
+		for _, ch1 := range loggerChannels {
+			close(ch1)
+		}
+		close(loggerChannel)
+
 		loggerChannels = make([]chan *Event, 0, 0)
 		loggerChannel = make(chan *Event, 0)
 		_lis.Close()
@@ -74,7 +74,6 @@ func StartMyMicroservice(ctx context.Context, listenAddr string, ACLData string)
 		for event := range loggerChannel {
 			for _, ch1 := range loggerChannels {
 				ch1 <- event
-
 			}
 		}
 	}()
@@ -108,17 +107,6 @@ func unaryInterceptor(
 
 	reply, err := handler(ctx, req)
 
-	/*
-		fmt.Printf(`--
-			after incoming call=%v
-			req=%#v
-			reply=%#v
-			time=%v
-			md=%v
-			err=%v
-			`, info.FullMethod, req, reply, time.Since(start), md, err)
-	*/
-
 	return reply, err
 }
 
@@ -127,7 +115,6 @@ func streamInterceptor(
 	stream grpc.ServerStream,
 	info *grpc.StreamServerInfo,
 	handler grpc.StreamHandler) error {
-	// Call 'handler' to invoke the stream handler before this function returns
 
 	ctx := stream.Context()
 
@@ -137,17 +124,6 @@ func streamInterceptor(
 	}
 
 	err = handler(srv, stream)
-
-	/*
-		fmt.Printf(`--
-			after incoming call=%v
-			req=%#v
-			reply=%#v
-			time=%v
-			md=%v
-			err=%v
-			`, info.FullMethod, req, reply, time.Since(start), md, err)
-	*/
 
 	return err
 }
@@ -203,8 +179,8 @@ func authLogStatistics(
 ***************************************************************************/
 
 type adminManager struct {
-	mu             sync.RWMutex
-	loggerChannels []chan *Event
+	mu            sync.RWMutex
+	addLogChannel func(chan *Event)
 }
 
 func (*adminManager) Logging(inStream *Nothing, srv Admin_LoggingServer) error {
@@ -212,6 +188,7 @@ func (*adminManager) Logging(inStream *Nothing, srv Admin_LoggingServer) error {
 	//loggerChannel <- &Event{Timestamp: 0, Host: "127.0.0.1:", Consumer: "logger", Method: "main.Admin/Logging"}
 
 	logChannel := make(chan *Event, 0)
+	addLogChannel(logChannel)
 
 	/*
 		go func(_server *Admin_LoggingServer, _ch1 chan *Event) {
@@ -327,7 +304,7 @@ func (*adminManager) Statistics(statInterval *StatInterval, srv Admin_Statistics
 
 func newAdminManager() *adminManager {
 	return &adminManager{
-		loggerChannels: make([]chan *Event, 0, 0),
+		//addLogChannel:
 	}
 }
 
