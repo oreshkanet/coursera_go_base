@@ -6,98 +6,85 @@ import (
 )
 
 func i2s(data interface{}, out interface{}) error {
-
-	// Будем итерироваться по элементам out
-	valOut := reflect.ValueOf(out).Elem()
-	typeOut := reflect.TypeOf(out).Elem()
-	for i := 0; i < typeOut.NumField(); i++ {
-		valueFieldOut := valOut.Field(i)
-		typeFieldOut := typeOut.Field(i)
-
-		// В зависимости от типа data будет разная логика чтения данных
-		switch dataTyped := data.(type) {
-		// Чтение из MAP
-		case map[string]interface{}:
-			if valData, isExists := dataTyped[typeFieldOut.Name]; isExists {
-				switch typeFieldOut.Type.Kind() {
-				case reflect.Int64, reflect.Int32, reflect.Int16, reflect.Int8, reflect.Int:
-					if currentVal, err := i2int(valData); err == nil {
-						valueFieldOut.SetInt(currentVal)
-					}
-				case reflect.Float64, reflect.Float32:
-					valueFieldOut.SetFloat(valData.(float64))
-				case reflect.String:
-					valueFieldOut.SetString(valData.(string))
-				case reflect.Bool:
-					valueFieldOut.SetBool(valData.(bool))
-				case reflect.Struct:
-					curValue := reflect.New(typeFieldOut.Type) //valueFieldOut.Interface()
-					i2struct(valData, valueFieldOut.Addr())
-					fmt.Println(curValue)
-				default:
-
-					fmt.Printf("\tname=%v, type=%v, value=%v, tag=`%v`\n", typeFieldOut.Name,
-						typeFieldOut.Type.Kind(),
-						valueFieldOut,
-						typeFieldOut.Tag,
-					)
-					//i2s(valData, typeFieldOut.Interface())
-				}
-			}
-
-		default:
-			return fmt.Errorf("unknown type of data")
-		}
-
+	valOut := reflect.ValueOf(out)
+	if valOut.Kind() != reflect.Ptr {
+		return fmt.Errorf("unknown type")
 	}
 
-	return nil
+	return i2sRecursive(data, valOut.Elem())
 }
 
-func i2struct(data interface{}, valOut reflect.Value) error {
-
-	// Будем итерироваться по элементам out
-	//valOut := reflect.ValueOf(out).Elem()
-	typeOut := valOut.Type() //reflect.TypeOf(out).Elem()
-	for i := 0; i < valOut.NumField(); i++ {
-		valueFieldOut := valOut.Field(i)
-		typeFieldOut := typeOut.Field(i)
-
-		// В зависимости от типа data будет разная логика чтения данных
-		switch dataTyped := data.(type) {
-		// Чтение из MAP
-		case map[string]interface{}:
-			if valData, isExists := dataTyped[typeFieldOut.Name]; isExists {
-				switch typeFieldOut.Type.Kind() {
-				case reflect.Int64, reflect.Int32, reflect.Int16, reflect.Int8, reflect.Int:
-					if currentVal, err := i2int(valData); err == nil {
-						valueFieldOut.SetInt(currentVal)
-					}
-				case reflect.Float64, reflect.Float32:
-					valueFieldOut.SetFloat(valData.(float64))
-				case reflect.String:
-					valueFieldOut.SetString(valData.(string))
-				case reflect.Bool:
-					valueFieldOut.SetBool(valData.(bool))
-				case reflect.Struct:
-					curValue := reflect.New(typeFieldOut.Type) //valueFieldOut.Interface()
-					i2s(valData, valueFieldOut)
-					fmt.Println(curValue)
-				default:
-
-					fmt.Printf("\tname=%v, type=%v, value=%v, tag=`%v`\n", typeFieldOut.Name,
-						typeFieldOut.Type.Kind(),
-						valueFieldOut,
-						typeFieldOut.Tag,
-					)
-					//i2s(valData, typeFieldOut.Interface())
-				}
-			}
-
-		default:
-			return fmt.Errorf("unknown type of data")
+func i2sRecursive(data interface{}, out reflect.Value) error {
+	switch out.Type().Kind() {
+	case reflect.Struct:
+		var dataTyped map[string]interface{}
+		var isMap bool
+		if dataTyped, isMap = data.(map[string]interface{}); !isMap {
+			return fmt.Errorf("unknown type")
 		}
 
+		typeOut := out.Type()
+
+		for i := 0; i < typeOut.NumField(); i++ {
+			valueFieldOut := out.Field(i)
+			typeFieldOut := typeOut.Field(i)
+
+			if valData, isExists := dataTyped[typeFieldOut.Name]; isExists {
+				if err := i2sRecursive(valData, valueFieldOut); err != nil {
+					return err
+				}
+			}
+		}
+	case reflect.Slice:
+		var dataTyped []interface{}
+		var isMap bool
+		if dataTyped, isMap = data.([]interface{}); !isMap {
+			return fmt.Errorf("unknown type")
+		}
+
+		typeOut := out.Type().Elem()
+		for _, valData := range dataTyped {
+			newValOut := reflect.New(typeOut)
+			if err := i2sRecursive(valData, newValOut.Elem()); err != nil {
+				return err
+			}
+			out.Set(reflect.Append(out, newValOut.Elem()))
+		}
+	case reflect.Map:
+		fmt.Println("map")
+	case reflect.Int64, reflect.Int32, reflect.Int16, reflect.Int8, reflect.Int:
+		if currentVal, err := i2int(data); err == nil {
+			out.SetInt(currentVal)
+		} else {
+			return fmt.Errorf("unknown type")
+		}
+	case reflect.Float64, reflect.Float32:
+		if currentVal, ok := data.(float64); ok {
+			out.SetFloat(currentVal)
+		} else {
+			return fmt.Errorf("unknown type")
+		}
+	case reflect.String:
+		if currentVal, ok := data.(string); ok {
+			out.SetString(currentVal)
+		} else {
+			return fmt.Errorf("unknown type")
+		}
+	case reflect.Bool:
+		if currentVal, ok := data.(bool); ok {
+			out.SetBool(currentVal)
+		} else {
+			return fmt.Errorf("unknown type")
+		}
+	case reflect.Ptr:
+		fmt.Println("Ptr")
+		if out.CanAddr() {
+			return i2sRecursive(data, out.Addr().Elem())
+		} else {
+			return i2sRecursive(data, out.Elem())
+		}
+	default:
+		fmt.Println("unknown")
 	}
 
 	return nil
